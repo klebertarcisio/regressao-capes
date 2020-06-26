@@ -1,6 +1,9 @@
 ---
 title: "Regressão linear na prática"
-output: html_notebook
+output:
+html_document:
+df_print: paged
+author: "Kleber Tarcísio Oliveira Santos"    
 ---
 
 ```{r warning=FALSE, echo=FALSE}
@@ -41,17 +44,15 @@ Uma das maneiras de avaliar a produção dos docentes que a CAPES utiliza é qua
 cacc = cacc_tudo %>%
   transmute(
     docentes = `Docentes permanentes`,
-    producao = (periodicos_A1 + periodicos_A2 + periodicos_B1),
+    producao = (3*periodicos_A1 + 2*periodicos_A2 + periodicos_B1),
     produtividade = producao / docentes,
     mestrados = Dissertacoes,
     doutorados = Teses,
+    documentos = Dissertacoes + Teses,
     tem_doutorado = tolower(`Tem doutorado`) == "sim",
     mestrados_pprof = mestrados / docentes,
     doutorados_pprof = doutorados / docentes
   )
-
-cacc_md = cacc %>% 
-  filter(tem_doutorado)
 ```
 
 
@@ -61,127 +62,71 @@ cacc_md = cacc %>%
 skimr::skim(cacc)
 ```
 
-
 ```{r}
 cacc %>% 
   ggplot(aes(x = docentes)) + 
   geom_histogram(bins = 15, fill = paleta[1])
-
 cacc %>% 
   ggplot(aes(x = producao)) + 
   geom_histogram(bins = 15, fill = paleta[2])
-
 cacc %>% 
   ggplot(aes(x = produtividade)) + 
   geom_histogram(bins = 15, fill = paleta[3])
 ```
 
-Se quisermos modelar o efeito do tamanho do programa em termos de docentes (permanentes) na quantidade de artigos publicados, podemos usar regressão. 
+A primeira observação feita foi alterar o cálculo da produção. No modelo inicial era `A1+A2+B1`, alterei a produção para `3*A1+2*A2+B1`. Dessa forma, a produção também é influenciada pela diferença do qualis dos artigos publicados pelos programas. Além disso, adicionei um campo chamado **Documentos** que é formado pela soma entre **Dissertações** e **Teses**. Dessa forma, queremos não apenas saber o relacionamento entre um tipo de documento, mas os dois em conjunto.
 
-*Importante*: sempre queremos ver os dados antes de fazermos qualquer modelo ou sumário: 
+Outra observação é que iremos utilizar o conjunto de todos os programas e não apenas os programas que têm doutorado. Aliás, talvez a variável **doutorado** interfira na **produtividade** do programa.
+
+Para descobrir quais variáveis utilizar no nosso modelo, vamos calcular o coeficiente de pearson entre todas as variáveis:
 
 ```{r}
+pearson = round(cor(cacc, method = "pearson"), 2)
+pearson
+```
+
+A primeira observação que podemos fazer é em relação a correlação de **pearson** entre as variáveis **produtividade** e **produção**. A variável **produção** apresenta uma correlação de 0.80 em relação à variável **produtividade**. Como vimos, o valor da **produtividade** é calculado diretamente sobre o valor da **produção** (**produtividade** = **producao**/**docentes**). Outra observação interessante é a correlação entre a variável **produtividade** e as variáveis **documentos** (0.54), **doutorados** (0.61) e **mestrados** (0.47). Percebe-se que a correlação com a nova variável (**documentos**) ficou entre as correlação com as variáveis **doutorados** e **mestrados**.
+
+Diante dos dados apresentados, vamos criar nosso modelo multivariado utilizando as seguintes variáveis: `produção, doutorados_pprof e tem_doutorado.`
+
+Segue abaixo três plotagens relacionando essas variáveis com a produtividade. É notável um relacionamento forte com a produção.
+
+```{r echo=TRUE}
 cacc %>% 
-  ggplot(aes(x = docentes, y = producao)) + 
+  ggplot(aes(x = produtividade, y = producao)) + 
   geom_point()
 ```
 
-Parece que existe uma relação. Vamos criar um modelo então:
-
-```{r}
-modelo1 = lm(producao ~ docentes, data = cacc)
-
-tidy(modelo1, conf.int = TRUE, conf.level = 0.95)
-glance(modelo1)
+```{r echo=TRUE}
+cacc %>% 
+  ggplot(aes(x = produtividade, y = doutorados_pprof)) + 
+  geom_point()
 ```
 
-Para visualizar o modelo:
-
-```{r}
-cacc_augmented = cacc %>% 
-  add_predictions(modelo1) 
-
-cacc_augmented %>% 
-  ggplot(aes(x = docentes)) + 
-  geom_line(aes(y = pred), colour = "brown") + 
-  geom_point(aes(y = producao)) + 
-  labs(y = "Produção do programa")
+```{r echo=TRUE}
+cacc %>% 
+  ggplot(aes(x = produtividade, y = tem_doutorado)) + 
+  geom_point()
 ```
 
-Se considerarmos que temos apenas uma amostra de todos os programas de pós em CC no Brasil, o que podemos inferir a partir desse modelo sobre a relação entre número de docentes permanentes e produção de artigos em programas de pós? 
+```{r echo=TRUE}
+lm_produtividade = lm(produtividade ~ producao + doutorados_pprof + tem_doutorado, data = cacc)
 
-Normalmente reportaríamos o resultado da seguinte maneira, substituindo VarIndepX e todos os x's e y's pelos nomes e valores de fato:
-
-> Regressão múltipla foi utilizada para analisar se VarIndep1 e VarIndep2 tem uma associação significativa com VarDep. Os resultados da regressão indicam que um modelo com os 2 preditores no formato VarDep = XXX.VarIndep1 + YYY.VarIndep2 explicam XX,XX% da variância da variável de resposta (R2 = XX,XX). VarIndep1, medida como/em [unidade ou o que é o 0 e o que é 1] tem uma relação significativa com o erro (b = [yy,yy; zz,zz], IC com 95%), assim como VarIndep2 medida como [unidade ou o que é o 0 e o que é 1] (b = [yy,yy; zz,zz], IC com 95%). O aumento de 1 unidade de VarIndep1 produz uma mudança de xxx em VarDep, enquanto um aumento...
-
-Produza aqui a sua versão desse texto, portanto:
-
------
-
-*SUBSTITUA ESSE TEXTO*
-
------
-
-Dito isso, o que significa a relação que você encontrou na prática para entendermos os programas de pós graduação no Brasil? E algum palpite de por que a relação que encontramos é forte?
-
------
-
-*SUBSTITUA ESSE TEXTO PELA SUA DISCUSSÃO DOS RESULTADOS*
-
------
-
-## Mais fatores
-
-```{r}
-modelo2 = lm(producao ~ docentes + mestrados_pprof + doutorados_pprof + tem_doutorado, 
-             data = cacc_md)
-
-tidy(modelo2, conf.int = TRUE, conf.level = 0.95)
-glance(modelo2)
+t <- tidy(lm_produtividade, conf.int = TRUE, conf.level = 0.95)
+g <- glance(lm_produtividade)
+g
 ```
 
-E se considerarmos também o número de alunos?
-
-```{r}
-modelo2 = lm(producao ~ docentes + mestrados + doutorados, data = cacc)
-
-tidy(modelo2, conf.int = TRUE, conf.level = 0.95)
-glance(modelo2)
+```{r echo=TRUE}
+tidy(lm_produtividade, conf.int = TRUE, conf.level = 0.95)
 ```
 
-Visualizar o modelo com muitas variáveis independentes fica mais difícil
+**EXPLICAÇÃO**
 
-```{r}
-para_plotar_modelo = cacc %>% 
-  data_grid(producao = seq_range(producao, 10), # Crie um vetor de 10 valores no range
-            docentes = seq_range(docentes, 4),  
-            # mestrados = seq_range(mestrados, 3),
-            mestrados = median(mestrados),
-            doutorados = seq_range(doutorados, 3)) %>% 
-  add_predictions(modelo2)
+A regressão múltipla foi utilizada para analisar se as variáveis producao, doutorados_pprof e tem_doutorado tem uma associação com a produtividade. Os resultados da regressão indicam que um modelo com o formato `produtividade = 0.01* producao + 1.6*` tem_doutorado -0.08* doutorados + 2.47 explicam 69% da variiância da variável de resposta produtividade (R = 0.692).
 
-glimpse(para_plotar_modelo)
+A variável doutorados_pprof tem uma relação pouco significativa [-0.93, 0.76], a variável producao também tem uma relação pouco significativa [0.0, 0.2] e a variável tem_doutorado tem uma relação mais significativa do que as outras duas variáveis [0.61, 2.61]. Todas com o IC 95%.
 
-```
+De acordo com os dados acima apresentados, percebe-se que a produtividade de um programa de pós-graduação em Ciência da Computação possui um alto relacionamento com a existência de um programa de doutorado. 
 
-```{r}
-para_plotar_modelo %>% 
-  ggplot(aes(x = docentes, y = pred)) + 
-  geom_line(aes(group = doutorados, colour = doutorados)) + 
-  geom_point(data = cacc, aes(y = producao, colour = doutorados))
-```
-
-Considerando agora esses três fatores, o que podemos dizer sobre como cada um deles se relaciona com a produção de um programa de pós em CC? E sobre o modelo? Ele explica mais que o modelo 1? 
-
------
-
-**EXPLICAÇÃO**: *Substitua esse texto por texto feito tal qual o que usamos com uma variável*
-
------
-
-
-## Agora produtividade 
-
-Diferente de medirmos produção (total produzido), é medirmos produtividade (produzido / utilizado). Abaixo focaremos nessa análise. Para isso crie um modelo que investiga como um conjunto de fatores que você julga que são relevantes se relacionam com a produtividade dos programas. Crie um modelo que avalie como _pelo menos 3 fatores_ se relacionam com a produtividade de um programa. Pode reutilizar fatores que já definimos e analizamos para produção. Mas cuidado para não incluir fatores que sejam função linear de outros já incluídos (ex: incluir A, B e um tercero C=A+B)
-
-Produza abaixo o modelo e um texto que comente (i) o modelo, tal como os que fizemos antes, e (ii) as implicações - o que aprendemos sobre como funcionam programas de pós no brasil?.
+Entretanto, vale ressaltar que consideramos pesos para as publicações A1, A2 e B1. Se mudássemos os valores dos pesos, o resultado poderia ser diferente. O objetivo com a inclusão do peso foi dar ênfase para publicações com maiores Qualis, assim como muitos programas de pós-graduação utilizam para alunos ingressarem. Apesar disso, a variável producao apareceu com pouca significância. Entretanto, ela poderia ser mais significativa se utilizássemos apenas os programas que possuem doutorado.
